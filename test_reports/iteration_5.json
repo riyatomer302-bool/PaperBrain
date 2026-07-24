@@ -1,0 +1,58 @@
+{
+  "summary": "Full backend test of new rate-limiter (login 5/900s, forgot 3/3600s, signup 10/3600s) and /api/billing/payments history endpoint. All 12 new tests pass + 66 regression tests (23 plan_limits + 26 auth_ext + 17 billing) = 78/78 backend tests passing. Verified: login 5-fail→401 then 6th→429 with Retry-After; login success resets bucket; forgot 3 OK then 4th 429; signup 10 OK then 11th 429; X-Forwarded-For gives independent buckets; failed Razorpay create-order does NOT insert into db.payments; manually-inserted payment record returned with plan_name/amount_inr derived and razorpay_signature + _id EXCLUDED; multi-record history sorted desc by created_at.",
+  "tested_scope": ["backend", "rate-limiting", "billing-payments-history", "regression"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "passed": [
+    "POST /api/auth/login: 5 rapid failed logins return 401 (per-XFF bucket)",
+    "POST /api/auth/login: 6th failure returns 429 with Retry-After header (integer seconds, 0<n<=905)",
+    "POST /api/auth/login: after 4 fails + 1 success, counter resets — next 5 fails still 401, 6th is 429",
+    "POST /api/auth/forgot-password: 3 attempts return 200; 4th returns 429 with Retry-After (0<n<=3605)",
+    "POST /api/auth/signup: 10 signups accepted (200/400 for dup), 11th returns 429 with Retry-After",
+    "X-Forwarded-For isolation: exhausting forgot bucket for XFF=10.99.40.1 does not block XFF=10.99.41.1",
+    "429 detail contains 'Too many' + 'Try again' + N-seconds",
+    "GET /api/billing/payments without Authorization → 401",
+    "GET /api/billing/payments with garbage Bearer token → 401",
+    "GET /api/billing/payments for fresh user returns {payments: []}",
+    "POST /api/billing/create-order with placeholder Razorpay keys returns 500 (Razorpay auth failure) and does NOT insert into db.payments — GET history stays empty and direct MongoDB query confirms zero rows",
+    "GET /api/billing/payments with a manually-inserted db.payments row returns the record with plan_name='Pro', amount_inr=499.0 (paise→INR conversion), and razorpay_signature + _id EXCLUDED from the JSON payload (raw response text does NOT contain the seeded secret signature string)",
+    "GET /api/billing/payments with 3 seeded records returns them sorted DESC by created_at",
+    "REGRESSION: all 17 test_billing.py tests still pass",
+    "REGRESSION: all 26 test_auth_ext.py tests still pass",
+    "REGRESSION: all 23 test_plan_limits.py tests still pass"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_rate_limit_and_billing_history.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_rate_limit.xml",
+    "/app/test_reports/pytest/pytest_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "rate_limit.py: uses global module-level _store dict guarded by a single threading.Lock. Fine for single-worker uvicorn but will diverge across workers/pods — swap for Redis before horizontal scaling. Comment in the file already flags this.",
+    "rate_limit._client_ip trusts X-Forwarded-For blindly (takes the first hop). At the edge (ingress) this is correct only if the ingress overwrites/appends XFF. If a client attaches their own XFF header and the ingress appends rather than replaces, an attacker could rotate the leftmost value to bypass rate limiting. Recommendation: use the LAST value in XFF as set by ingress, or use a trusted-proxy list.",
+    "billing.build_router.payments_history: uses projection {'_id': 0, 'razorpay_signature': 0} — correctly hides signature. Sort is DESC on created_at (ISO strings) which relies on lexicographic sort of same-tz ISO. Safe as long as all created_at have the same +00:00 suffix (verified). Limit is to_list(200) — no pagination; add cursor/page if user could accumulate >200 payments.",
+    "billing.build_router.payments_history: plan_name lookup falls back to plan_id string if the plan id is unknown — good defensive default. Note amount_inr rounds to 2 decimals from paise; correct.",
+    "server.py login: reset_bucket is only called after a *successful* verify_password. Correct — brute-forcers do not benefit. However, reset_bucket runs after every successful login so a valid user occasionally hitting wrong-then-right does not accumulate. Good.",
+    "server.py signup: rate limit is 10/hr per IP but there is no throttling on Razorpay create-order or on chat endpoints. If cost-sensitive endpoints are added later, apply the same pattern.",
+    "auth_ext.forgot_password: check_rate raises 429 BEFORE the DB lookup so it does not leak whether the email exists via timing. Good.",
+    "No tests for concurrent (thread) requests against rate limiter; the deque + Lock code is straightforward but a stress test would be worth adding under a mocked clock.",
+    "Retry-After header uses integer seconds computed as (window - (now - q[0])) + 1; can be as low as 1s if the oldest hit is about to age out. Acceptable behavior."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_rate_limit_and_billing_history.py (created)",
+    "/app/backend/tests/conftest.py (created) — installs a per-test-file X-Forwarded-For header so pre-existing test files (which never sent XFF) don't share the rate-limit bucket with the new tests and get their own isolated bucket. Existing tests unaware of rate limiting continue to pass; new tests that explicitly set XFF are respected."
+  ],
+  "success_rate": {
+    "backend": "100% (78/78: 12 rate_limit+billing_history, 23 plan_limits, 26 auth_ext, 17 billing)",
+    "frontend": "not tested (backend-only scope per request)"
+  },
+  "test_credentials": "Fresh isolated users per test class: rt-<slug>-<hex>@test.com / pass1234. Cleaned up in session teardown via _db.users.delete_many({'email': {'$regex': '^rt-'}}).",
+  "seed_data_creation": "12+ ephemeral users created via signup. 4 db.payments rows inserted directly via pymongo for the billing-history record test and multi-record ordering test — all cleaned up in test finally blocks. Rate limiter is in-memory; backend restarted once before the full run to guarantee a clean state.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Rate limiter is process-local. If you run the whole test dir, /app/backend/tests/conftest.py auto-injects a unique X-Forwarded-For per test file so buckets don't collide. If you add tests that hit /auth/login, /auth/signup, or /auth/forgot-password, either rely on the conftest OR set your own X-Forwarded-For (see TestLoginRateLimit.XFF pattern using unique third-octet). To reset all buckets, `sudo supervisorctl restart backend`. MongoDB access: MONGO_URL + DB_NAME from /app/backend/.env, collections used: db.payments (fields: id, user_id, plan_id, razorpay_order_id, razorpay_payment_id, razorpay_signature, amount, currency, status, created_at, paid_at). /api/billing/payments returns amount_inr = round(amount/100, 2) and plan_name from PLANS[plan_id].name. Response projection strips _id and razorpay_signature.",
+  "rca of the issue": "N/A — no failures. All rate-limit and billing-history behaviour matches spec. A transient regression appeared during the very first full-suite run because pre-existing tests share the same client IP with the new rate-limit tests (the runners have no ingress that appends XFF, so all requests without XFF hash to a single (client.host, bucket) key). The conftest.py XFF-injection fix isolates each test file's bucket and the full suite passes cleanly."
+}

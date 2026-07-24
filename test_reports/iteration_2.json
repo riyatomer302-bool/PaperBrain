@@ -1,0 +1,51 @@
+{
+  "summary": "Backend regression + new-feature testing of MNEMOSYNE Razorpay billing. 17/17 pytest tests passed covering /api/billing/plans, /status, /create-order, /verify-payment, /webhook plus regression spot-checks (/auth/me, /documents list + TXT upload). Confirmed placeholder Razorpay keys reach Razorpay and yield 500 with 'Razorpay error: ... Authentication failed' as expected.",
+  "tested_scope": ["backend", "billing", "auth-regression"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "passed": [
+    "GET /api/billing/plans -> 2 plans (free, pro), currency=INR, razorpay_key_id echoed ('rzp_test_placeholder')",
+    "Plans pricing: free=0 INR (period=forever), pro=499 INR (period=month), limits structure valid",
+    "GET /api/billing/status without token -> 401",
+    "GET /api/billing/status with garbage token -> 401",
+    "GET /api/billing/status with fresh-user token -> {plan:'free', status:'free', expires_at:null, plan_details.id='free'}",
+    "POST /api/billing/create-order without token -> 401",
+    "POST /api/billing/create-order plan_id='free' -> 400",
+    "POST /api/billing/create-order plan_id='nonsense' -> 400",
+    "POST /api/billing/create-order plan_id='pro' -> 500 with detail containing 'Razorpay error' and 'Authentication failed' (proves wiring reaches Razorpay live API with placeholder creds)",
+    "POST /api/billing/verify-payment without token -> 401",
+    "POST /api/billing/verify-payment with fake signature + non-existent payment_record_id -> 404 (proves auth + payment lookup path executes)",
+    "POST /api/billing/webhook without X-Razorpay-Signature -> 400 (signature verify fails => 'Invalid webhook signature')",
+    "POST /api/billing/webhook with bad signature -> 400",
+    "Regression: GET /api/auth/me with token works, without token -> 401",
+    "Regression: GET /api/documents returns list",
+    "Regression: POST /api/documents/upload TXT indexed to Chroma (status=ready, chunk_count>=1) and deleted successfully"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_billing.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "billing.py verify-payment: order of checks is (1) client init, (2) payment record lookup, (3) signature verify. Consider verifying signature before DB lookup so a fake payment_record_id doesn't leak record existence (minor security hardening, not a bug).",
+    "billing.py /create-order: on Razorpay failure we correctly do NOT insert a payment record (insert only happens after successful order.create). Good.",
+    "billing.py /webhook: returns 500 with 'Webhook not configured' if RAZORPAY_WEBHOOK_SECRET missing, but placeholder is set so we get 400 on bad signature — correct wiring.",
+    "server.py & billing.py: JWT_SECRET default is 'change-me-in-prod...' hard-coded fallback? Actually server.py reads os.environ['JWT_SECRET'] (required, good). No hardcoded fallback.",
+    "billing.py PLANS pro.limits are all None (unlimited) — matches feature description.",
+    "billing.py subscription_status: datetime.fromisoformat may fail for Z-suffixed ISO strings on Python <3.11; running 3.11.15 so fine. Consider defensive parsing later.",
+    "billing.py webhook handler good: reads raw body before parse and passes to verify_webhook_signature — required (not JSON-normalized)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/__init__.py (created)",
+    "/app/backend/tests/test_billing.py (created)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "test@test.com / testpass123 (auto-created via signup if missing). Additional fresh TEST_billing_<uuid>@test.com created per module for isolated status test.",
+  "seed_data_creation": "One fresh test user per module run (email prefix TEST_billing_*) to verify free-tier status without prior subscriptions. TXT doc uploaded and deleted during regression.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Billing wiring is verified end-to-end structurally. To test happy-path order.create / verify-payment / webhook, real Razorpay test keys (rzp_test_*) must replace placeholders in /app/backend/.env. Signature verify uses HMAC-SHA256(order_id|payment_id, KEY_SECRET). Frontend billing UI not tested here.",
+  "rca of the issue": "N/A — no failures. Placeholder Razorpay creds behave exactly as expected: /create-order surfaces Razorpay's 'Authentication failed' inside HTTP 500 detail 'Razorpay error: ...', proving the SDK call is dispatched and error handling is correct."
+}

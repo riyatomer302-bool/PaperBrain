@@ -1,0 +1,43 @@
+{
+  "summary": "Regression validation after PaperBrain rebrand + code-review remediation (defensive `payload=None` init in auth_ext.decode_purpose_token, `if not order or 'id' not in order` guard in billing.create_order, useMemo in AuthContext, console.warn in previously-empty catches). Full backend suite executed: 78 passed, 0 failed, 29.57s. No MNEMOSYNE/Mnemosyne strings remain anywhere in /app/backend or /app/frontend/src (grep -rIn -E 'MNEMOSYNE|Mnemosyne' --include='*.py' --include='*.jsx' returned zero matches). No regressions.",
+  "tested_scope": ["backend", "regression", "rebrand-grep"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "passed": [
+    "All 23 test_plan_limits.py tests pass (doc/chunk/chat plan-limit enforcement, expired-pro reversion, upload flows, /billing/status + /billing/usage)",
+    "All 26 test_auth_ext.py tests pass (verify-email crafted-JWT, reset-password crafted-JWT, forgot-password, change-password, google/session 401 on fake session_id, decode_purpose_token returns 400 'Invalid token' for garbage / 400 'Link has expired' for expired / 400 'Invalid token purpose' for purpose mismatch)",
+    "All 17 test_billing.py tests pass (create-order with placeholder Razorpay keys still returns 500 'Razorpay error: Authentication failed', NO db.payments row inserted on failure, /billing/status + /billing/usage for free+pro, plan listing)",
+    "All 12 test_rate_limit_and_billing_history.py tests pass (login 5/900s + 6th=429 + reset on success, forgot 3/3600s + 4th=429, signup 10/3600s + 11th=429, XFF isolation, /billing/payments excludes _id + razorpay_signature, DESC sort by created_at)",
+    "Rebrand grep: zero 'MNEMOSYNE' or 'Mnemosyne' matches in /app/backend or /app/frontend/src (.py/.jsx)",
+    "auth_ext.decode_purpose_token: `payload = None` initialised before try; final `if not payload or payload.get('purpose') != expected_purpose` guard is dead-code for successful jwt.decode (never returns falsy) but is a safe defensive belt — behavior unchanged, still returns HTTPException(400, 'Invalid token purpose') as expected by tests",
+    "billing.create_order: new `if not order or 'id' not in order: raise HTTPException(500, 'Razorpay did not return a valid order')` sits AFTER the try/except, so placeholder-key auth failure still surfaces as 'Razorpay error: Authentication failed' via the existing except branch — the new guard only fires if the SDK ever returns an unexpected shape (never in current test env)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_auth_ext.py",
+    "/app/backend/tests/test_billing.py",
+    "/app/backend/tests/test_plan_limits.py",
+    "/app/backend/tests/test_rate_limit_and_billing_history.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_iter6.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth_ext.decode_purpose_token: after the try/except, both `jwt.ExpiredSignatureError` and `jwt.PyJWTError` already raise HTTPException — so `payload` can only ever be a dict at line 54. The `if not payload` guard is unreachable in practice. It is harmless (satisfies linters/static analyzers) but a small clarifying comment ('defensive; unreachable in normal flow') would help future maintainers.",
+    "billing.create_order: the new `if not order or 'id' not in order` guard is correctly placed AFTER the try/except and only fires if Razorpay returns a truthy-but-malformed object. razorpay-python typically raises on any non-2xx, so this is defensive-only. No test coverage for this branch exists — could add a mocked-client test that returns `{}` from client.order.create if strict coverage matters (low priority).",
+    "Frontend files (AuthContext.jsx useMemo, Chat.jsx / billing.js console.warn) were NOT tested in this pass since scope is backend-only per request. useMemo addition is trivial and safe; console.warn on empty catches is strictly additive. Recommend a quick manual smoke test of the login and chat streaming pages when the frontend is retested.",
+    "Rebrand appears complete based on strict .py/.jsx grep. Did not grep other extensions (.md, .json, .html, .txt, package.json name field, etc.) — main agent should confirm those separately if branding hygiene matters there too."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (78/78)",
+    "frontend": "not tested (backend-only scope per request)"
+  },
+  "test_credentials": "Per-file X-Forwarded-For isolation via /app/backend/tests/conftest.py. Ephemeral users created per test class (prefix rt-, cleaned up in teardown). JWT_SECRET from /app/backend/.env used to craft verify/reset tokens in test_auth_ext.py.",
+  "seed_data_creation": "None new. Existing per-test users and db.payments seed rows are created and cleaned by the test fixtures themselves.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The `if not payload` branch in auth_ext.decode_purpose_token is defensive/unreachable — do not write a test that expects it to fire in normal jwt operation. Similarly, `if not order or 'id' not in order` in billing.create_order will not trip against the placeholder Razorpay keys because the SDK raises before the assignment; testing it requires monkeypatching client.order.create. Rate-limiter is process-local; if you add new rate-limited tests, either use conftest XFF or set your own XFF header (see TestLoginRateLimit pattern). To reset all buckets: `sudo supervisorctl restart backend`. Full run: `cd /app/backend && python -m pytest tests/ -v --tb=short --junitxml=/app/test_reports/pytest/pytest_next.xml` (~30s).",
+  "rca of the issue": "N/A — no failures. Rebrand and code-review remediation regression-clean."
+}

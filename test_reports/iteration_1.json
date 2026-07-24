@@ -1,0 +1,30 @@
+{
+  "summary": "Backend testing for Personal AI Knowledge Assistant. All 18 checks passed covering auth (signup/login/me), document upload (TXT), URL ingestion, unsupported file rejection, listing, chat SSE streaming (init/delta/done + citations), follow-up conversation, conversation listing/retrieval, user isolation (multi-tenant Chroma namespaces), and deletion of documents/conversations. Claude Sonnet 4.5 via Emergent LLM Key streamed successfully with 6 delta events. Citations correctly referenced the uploaded doc; user B did not see user A's documents.",
+  "tested_scope": ["backend", "auth", "integration"],
+  "passed": [
+    "POST /api/auth/signup - new user returns token+user",
+    "POST /api/auth/signup duplicate returns 400",
+    "POST /api/auth/login correct returns token",
+    "POST /api/auth/login wrong password returns 401",
+    "GET /api/auth/me with token returns profile",
+    "GET /api/auth/me without token returns 401",
+    "POST /api/documents/upload TXT indexed (chunk_count=1, status=ready)",
+    "GET /api/documents lists uploaded doc",
+    "POST /api/documents/upload unsupported extension returns 400",
+    "POST /api/documents/url with https://example.com ingested successfully",
+    "POST /api/chat/stream returns SSE with init(conv_id+citations)+deltas+done",
+    "Citations reference the uploaded document (doc_id match)",
+    "Follow-up chat with conversation_id continues same conversation",
+    "GET /api/conversations sorted by updated_at desc",
+    "GET /api/conversations/{id} returns messages history (>=2)",
+    "User isolation: user A's docs not in user B's chat citations",
+    "DELETE /api/documents/{id} removes from Mongo (list no longer shows it)",
+    "DELETE /api/conversations/{id} deletes conversation (subsequent GET 404)"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "not tested (skipped per request)"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "test_credentials": "test_credentials.md empty; used dynamically-created users for isolation testing (usera_<uid>@test.com / userb_<uid>@test.com)"
+}

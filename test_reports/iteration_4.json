@@ -1,0 +1,60 @@
+{
+  "summary": "Full backend test of MNEMOSYNE Free-tier plan limits enforcement. 23/23 new plan_limits tests pass + 43/43 regression (17 billing + 26 auth_ext) = 66/66 backend tests passing. Verified /api/billing/usage structure & auth, doc count cap (10) with proper 402+detail, /documents/url respects doc cap, delete-then-upload cycle, chunk cap (200) with document rollback on rejection, chat cap (50/month) via DB-seeded messages, Pro subscription bypasses all limits, expired Pro reverts to Free and flips status='expired' in DB. Chat SSE stream still emits init/delta/done for below-limit Free users.",
+  "tested_scope": ["backend", "plan-limits", "billing-usage", "regression"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "passed": [
+    "GET /api/billing/usage without auth -> 401",
+    "GET /api/billing/usage with bad token -> 401",
+    "GET /api/billing/usage (free) -> plan=free, limits={10,200,50}, percents=0, free_limits echoed, month_started_at is first-of-month UTC ISO",
+    "Free user: 10 sequential POST /api/documents/upload succeed (chunk_count>=1 each)",
+    "After 10 uploads: usage.documents=10, percent.documents=100",
+    "11th POST /api/documents/upload -> 402 with 'Free plan limit reached' and '10 documents' in detail",
+    "POST /api/documents/url when over doc limit -> 402 with same detail",
+    "Delete a doc -> usage.documents=9 -> next upload succeeds",
+    "Large TXT (~230k chars, >>200 chunks) upload -> 402 with 'chunks' in detail; usage.documents stays at 0 (record rolled back); usage.chunks stays 0",
+    "Chat below limit: POST /api/chat/stream returns 200 text/event-stream with init/delta/done events",
+    "Chat cap: seeded 50 user messages in current calendar month -> usage.chats_this_month=50 -> 51st /chat/stream -> 402 with 'Free plan limit reached' and '50 chats'",
+    "Pro subscription (30d expiry, seeded in db.subscriptions): /api/billing/usage returns plan='pro', limits={documents:null, chunks:null, chats_per_month:null}",
+    "Pro user uploads 12 documents (>10) without any 402; usage.documents=12",
+    "Pro user chat with 60 seeded messages this month still returns 200 (limit not applied)",
+    "Expired Pro (expires_at yesterday): /api/billing/status returns plan='free', status='free'; db.subscriptions.status flipped to 'expired'; /api/billing/usage returns plan='free' with free limits",
+    "Regression: signup + login roundtrip, /api/auth/me, /api/documents list & upload/delete, /api/billing/plans public, /api/auth/forgot-password, /api/auth/verify-email invalid token 400, /api/auth/change-password without auth 401",
+    "Regression: all 17 test_billing.py tests still pass",
+    "Regression: all 26 test_auth_ext.py tests still pass"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_plan_limits.py",
+    "/app/backend/tests/test_billing.py",
+    "/app/backend/tests/test_auth_ext.py",
+    "/app/test_reports/pytest/pytest_plan_limits.xml",
+    "/app/test_reports/pytest/pytest_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "plan_limits.get_usage: uses count_documents with $in over ALL user conversation IDs (fetched via to_list(1000)). If a user has >1000 conversations, some chats will be excluded from the count (users could exceed 50/month). Consider joining via aggregation ($lookup) or storing user_id directly on messages so a single filter suffices — currently messages collection has no user_id field.",
+    "plan_limits.enforce_document_limit: correctly re-checks usage on every call (no caching). Uses inequality '>= 10' so exactly at the boundary is blocked — good.",
+    "server.py chat/stream: enforce_chat_limit is called BEFORE the user's message is inserted, but on success the message IS inserted. So the 51st attempt is correctly rejected without incrementing the counter. Good ordering.",
+    "server.py documents/upload rollback path (line 307): after doc chunk-count check fails, doc record is deleted but any partial Chroma writes have not yet happened (index_document is called after the check). Verified via test — usage.documents stays at 0. Good.",
+    "plan_limits.get_active_plan: side-effect of flipping expired sub to status='expired' mid-request is fine but could race with a concurrent /billing/status call doing the same. Idempotent update, so low risk.",
+    "plan_limits._month_start_iso: uses .isoformat() which includes timezone offset '+00:00'; messages seeded via test with datetime.now(timezone.utc).isoformat() also carry '+00:00' — string comparison ($gte) works because ISO format sorts lexicographically for same-tz strings. If any legacy message was stored without TZ suffix, the comparison would misbehave. Consider normalising created_at to Z-suffix or storing as native BSON date.",
+    "billing.usage endpoint: importing plan_limits inside the request handler (lazy import) — minor overhead, acceptable, but could move to module top.",
+    "chunks limit enforcement (server.py:306 & 342) recomputes get_usage after doc.insert_one, which means the newly-inserted 0-chunk doc counts toward usage.documents but not toward chunks (chunk_count=0). Since usage.documents check already ran BEFORE insert (via enforce_document_limit), the doc insertion + subsequent chunk check + rollback is safe. However there is a small window where the doc has status='processing' and counts toward documents — if the chunk check fails, delete cleans it up. Verified.",
+    "No test cleanup fixture for the tests themselves — creates many limits-test-* users but does not delete them. Consider a session-level teardown fixture removing users with email like '%limits-test-%' from db.users / db.documents / db.subscriptions / db.conversations / db.messages after test run (matches convention used by test_auth_ext.py which also leaves ephemeral users behind)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_plan_limits.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (66/66: 23 plan_limits + 17 billing + 26 auth_ext)",
+    "frontend": "not tested (skipped per request)"
+  },
+  "test_credentials": "Fresh isolated users per test class: limits-test-<slug>-<uuid>@test.com / pass1234. Pro subscription seeded directly into db.subscriptions with plan_id='pro', status='active', expires_at=now+30d. Expired sub uses expires_at=now-1d.",
+  "seed_data_creation": "Multiple ephemeral users created via /api/auth/signup (~10 users). db.subscriptions rows inserted+cleaned for Pro/Expired cases. 50 user messages seeded into db.messages for chat-cap test then cleaned up. 60 messages seeded for Pro chat-bypass test then cleaned up. Docs and their Chroma chunks for the Pro/Free upload tests remain on disk (harmless).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Base URL from /app/frontend/.env REACT_APP_BACKEND_URL. Mongo access is via pymongo (MongoClient) using MONGO_URL+DB_NAME from /app/backend/.env. Pro simulation: insert db.subscriptions {id, user_id, plan_id:'pro', status:'active', started_at, expires_at:now+30d, amount:49900}. Chat-limit tests seed db.messages with created_at=datetime.now(timezone.utc).isoformat() (must be >= _month_start_iso() which is first-of-month UTC ISO). To exercise chunk-cap: TXT with ~230k chars (chunk_size=800/overlap=120 => step 680; 230k/680 >> 200). If plan_limits.get_usage is modified to store user_id on messages (recommended per code review), the chat-cap seed logic must include user_id on each message document.",
+  "rca of the issue": "N/A - no failures. All plan enforcement behaves per spec: proper 402 status, detail strings match required substrings, doc-record rollback on chunk-cap failure verified, Pro subscription bypass verified for both docs and chat, expired Pro correctly reverts to Free including DB status flip."
+}

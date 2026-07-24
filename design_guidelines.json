@@ -1,0 +1,125 @@
+{
+  "theme": "SWISS & HIGH-CONTRAST (Authority, Clarity, Truth)",
+  "emotional_tone": "Secure, private, reliable, and intelligent.",
+  "typography": {
+    "headings": {
+      "font_family": "Cabinet Grotesk, sans-serif",
+      "weights": ["300", "500", "800"],
+      "usage": "Use for all main headers (H1-H3). Radical weight contrast (Black vs Light). Never use 'Inter'. Tight letter spacing: `tracking-tight`."
+    },
+    "body": {
+      "font_family": "IBM Plex Sans, sans-serif",
+      "weights": ["400", "500"],
+      "usage": "Use for paragraphs, list items, and standard UI elements. High legibility for document reading."
+    },
+    "mono": {
+      "font_family": "IBM Plex Mono, monospace",
+      "usage": "Use for code snippets, citations, timestamps, and metadata."
+    }
+  },
+  "colors": {
+    "archetype": "Swiss & High-Contrast",
+    "light_mode": {
+      "background": "#FCFCFC",
+      "foreground": "#0A0A0A",
+      "card": "#FFFFFF",
+      "card_foreground": "#0A0A0A",
+      "primary": "#0044FF",
+      "primary_foreground": "#FFFFFF",
+      "muted": "#F3F4F6",
+      "muted_foreground": "#4B5563",
+      "border": "#E5E7EB",
+      "accent": "#00A86B",
+      "destructive": "#FF2A2A"
+    },
+    "dark_mode": {
+      "background": "#050505",
+      "foreground": "#FAFAFA",
+      "card": "#0A0A0A",
+      "card_foreground": "#FAFAFA",
+      "primary": "#3366FF",
+      "primary_foreground": "#FFFFFF",
+      "muted": "#1F1F1F",
+      "muted_foreground": "#A1A1AA",
+      "border": "#1A1A1A",
+      "accent": "#00CC88",
+      "destructive": "#FF4444"
+    },
+    "rules": [
+      "Use stark monochrome backgrounds with single high-contrast primary accents.",
+      "Never use pure black #000000 or generic gray. Always tint neutrally (e.g., #050505).",
+      "Limit the use of primary colors to CTAs, active states, and AI generation highlights.",
+      "Green (Accent) is used strictly for privacy indicators, encryption status, and successful citations."
+    ]
+  },
+  "grids_and_layouts": {
+    "dashboard_knowledge_base": "High Density Grid. Tight gaps (gap-4). Every pixel utilized for document lists and upload status. Strict hierarchical grids.",
+    "chat_interface": "Tri-pane layout: 1) Collapsible Left History Rail, 2) Centered Chat Transcript (max-width for readability), 3) Right Artifact/Citation Panel for displaying source documents and metadata.",
+    "spacing_scale": "Generous Spacing Philosophy for landing pages (p-12, p-24). Compact, dense spacing for the knowledge base (p-4, p-6).",
+    "alignment": "Always left-align chat inputs, document titles, and paragraphs. Avoid centering text unless in an empty state."
+  },
+  "visual_enhancers": {
+    "surfaces": "Grid Borders (The 'Technical' Look). Expose the skeleton for the knowledge base. Use 1px subtle borders (border-border/40).",
+    "glassmorphism": "Use 'Optical Clarity' (backdrop-blur-xl bg-background/80) for sticky headers and floating context menus.",
+    "shadows": "Minimalist. Replace soft shadows with 1px solid strokes or subtle inner glows. Use neo-brutalist contrast where appropriate."
+  },
+  "motion": {
+    "chat_streaming": "Token-by-token output with a visible stop button and typing states. Add a subtle shimmer to generating text.",
+    "interactions": "Hover states must explicitly change background and text color (e.g., hover:bg-muted hover:text-foreground). Focus states must have higher contrast.",
+    "transitions": "Use specific properties (e.g., transition: transform 0.2s ease). NEVER use 'transition: all'."
+  },
+  "accessibility": {
+    "contrast": "Minimum 4.5:1 for standard text. Minimum 3:1 for interactive elements.",
+    "focus": "Clear, high-contrast focus rings for all inputs and buttons.",
+    "motion": "Respect 'prefers-reduced-motion'.",
+    "testing": "All interactive elements MUST include a `data-testid` attribute (e.g., data-testid='upload-document-button')."
+  },
+  "components": {
+    "forms_inputs": "Use customized Shadcn UI components. Never use native inputs.",
+    "buttons": "Sharp edges or extremely subtle rounding (max 4px radius). Hover state should lift slightly or invert colors.",
+    "chat_bubbles": "Avoid traditional bubble shapes. Use full-width tool framing with subtle background shading for AI responses, transparent background for user prompts.",
+    "citations": "Render citations as small, clickable inline tags that open the right Artifact Panel.",
+    "toasts": "Use 'sonner' for all notifications (e.g., 'Document chunking complete')."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1614064548237-096f735f344f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMHNlY3VyZSUyMGRhdGElMjB0ZWNobm9sb2d5fGVufDB8fHx8MTc4NDgxMjI2OHww&ixlib=rb-4.1.0&q=85",
+        "description": "Padlock on laptop with light trails",
+        "category": "landing_hero_or_auth_background",
+        "instruction": "Use for the Auth page or Landing page hero section to communicate security."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1655635643486-a17bc48771ff?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMHNlY3VyZSUyMGRhdGElMjB0ZWNobm9sb2d5fGVufDB8fHx8MTc4NDgxMjI2OHww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract blue and pink 3D cubes",
+        "category": "empty_state_knowledge_base",
+        "instruction": "Use as a decorative background for the empty state of the knowledge base or chat."
+      },
+      {
+        "url": "https://images.pexels.com/photos/38486959/pexels-photo-38486959.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Black and white abstract image with the word 'ENCRYPTION'",
+        "category": "privacy_section_landing",
+        "instruction": "Use in the landing page section highlighting data privacy and local vector databases."
+      }
+    ],
+    "icons": "Use Phosphor Icons (@phosphor-icons/react) for dense dashboards and tool-heavy interfaces."
+  },
+  "instructions_to_main_agent": [
+    "Install required font families: Cabinet Grotesk (headings), IBM Plex Sans (body), IBM Plex Mono.",
+    "Install Phosphor Icons: yarn add @phosphor-icons/react",
+    "Implement both Light and Dark modes. Default to Dark mode.",
+    "Do NOT use HTML-based components for advanced interactions. Rely on Shadcn.",
+    "Chat interface MUST feature a Left History Rail, a Centered Transcript, and a Right Artifact Panel for citations.",
+    "Ensure 'Privacy & Encryption' indicators are visible in the Knowledge Base dashboard.",
+    "Do not apply global 'text-align: center' in App.css. Left-align text for readability."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "Avoid generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition (e.g., transition: all). Add specific transitions.",
+    "NEVER use AI assistant Emoji characters (🤖🧠💭💡) for icons.",
+    "Every interaction needs micro-animations (hover states, transitions).",
+    "Never use generic placeholder URLs for images."
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "summary": "Full backend test of MNEMOSYNE auth_ext module: signup verification, forgot/reset password, verify-email, resend/send-verification, change-password, update-profile, Emergent Google OAuth wiring, plus regression (billing plans, documents, chat/stream). 26/26 new auth_ext tests + 17/17 billing regression = 43/43 passed. Mock email logging via [MOCK EMAIL - no RESEND_API_KEY] confirmed working; no email enumeration leak; Emergent Google session endpoint properly rejects invalid session_id with 401.",
+  "tested_scope": ["backend", "auth-ext", "regression"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "passed": [
+    "POST /api/auth/signup sets email_verified=false; logs [MOCK EMAIL] 'Verify your MNEMOSYNE email' with recipient email; still returns token+user",
+    "POST /api/auth/forgot-password (existing user) -> {ok:true} and logs mock email 'Reset your MNEMOSYNE password'",
+    "POST /api/auth/forgot-password (nonexistent user) -> {ok:true} and does NOT log mock email (no enumeration)",
+    "POST /api/auth/reset-password (invalid token) -> 400 'Invalid token'",
+    "POST /api/auth/reset-password (wrong purpose token: verify_email used for reset) -> 400 'Invalid token purpose'",
+    "POST /api/auth/reset-password (new_password length <6) -> 400 'Password must be at least 6 characters'",
+    "POST /api/auth/reset-password (crafted valid reset_password JWT via JWT_SECRET) -> 200 {ok:true}; subsequent login with new password OK; login with old password -> 401",
+    "POST /api/auth/verify-email (crafted verify_email JWT) -> 200 {ok:true, email:...}; /auth/me shows email_verified=true",
+    "POST /api/auth/verify-email (invalid token) -> 400 'Invalid token'",
+    "POST /api/auth/verify-email (expired token) -> 400 'Link has expired'",
+    "POST /api/auth/resend-verification (unverified existing user) -> {ok:true} + mock email logged",
+    "POST /api/auth/resend-verification (nonexistent user) -> {ok:true} + NO mock email logged",
+    "POST /api/auth/send-verification (authed, unverified) -> {ok:true}; mock email logged",
+    "POST /api/auth/send-verification (authed, already verified) -> {ok:true, already_verified:true}",
+    "POST /api/auth/change-password without auth -> 401",
+    "POST /api/auth/change-password wrong current -> 400 'Current password is incorrect'",
+    "POST /api/auth/change-password new_password <6 -> 400 (contains '6')",
+    "POST /api/auth/change-password valid -> 200; new-password login works, old-password login 401",
+    "POST /api/auth/update-profile with new name -> 200 {ok:true, name:...}; /auth/me reflects new name",
+    "POST /api/auth/update-profile whitespace-only name -> 400 'Name is required'",
+    "POST /api/auth/update-profile no auth -> 401",
+    "POST /api/auth/google/session with fake session_id -> 401 'Invalid Google session' (confirms live wiring to https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data)",
+    "Regression GET /api/billing/plans -> 200, >=2 plans",
+    "Regression GET /api/documents (authed) -> 200 list",
+    "Regression POST /api/chat/stream (authed) -> 200 text/event-stream, init SSE event received",
+    "Regression POST /api/chat/stream (no auth) -> 401",
+    "Regression: all 17 test_billing.py tests still pass"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_auth_ext.py",
+    "/app/backend/tests/test_billing.py",
+    "/app/test_reports/pytest/pytest_results_auth_ext.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth_ext.reset_password: length check runs AFTER decode_purpose_token, so an invalid token surfaces 'Invalid token' before length check. Acceptable behavior but consider validating length first for consistent UX (very minor).",
+    "auth_ext.verify_email: does not check whether user is already verified — repeatedly hitting endpoint just re-sets verified_at. Idempotent, so OK, but consider short-circuiting for auditability.",
+    "auth_ext.google_session: broad Exception -> 500 message includes raw exception text ('Google auth failed: {e}'). Could leak internal detail; consider a generic message and log internally only.",
+    "auth_ext.forgot_password / resend_verification: uses find_one on lowercased email — matches signup's lowercasing (server.py line 224). Good consistency.",
+    "server.py signup: verification email dispatch happens inline (await send_email) after user insert. If Resend outage occurs (real key), signup latency spikes. Consider background task (asyncio.create_task) or a queue. In mock mode this is negligible.",
+    "server.py signup: 'try/except Exception as e: logger.warning(...)' silently swallows email errors — good for UX (signup still succeeds) but user cannot retry easily. resend-verification endpoint exists so this is acceptable.",
+    "email_service.send_email: correctly detects 'starts with re_placeholder' for mock mode. Note: an empty RESEND_API_KEY also triggers mock (good).",
+    "auth_ext.change_password: verifies current_password AFTER length check on new_password. If a user passes wrong current AND short new, they get '6 chars' error first — minor UX quirk (order of validation).",
+    "auth_ext.decode_purpose_token: correctly distinguishes ExpiredSignatureError vs generic PyJWTError. jwt library version (PyJWT) confirmed via jwt.ExpiredSignatureError import.",
+    "auth_ext.google_session: on first login creates user with email_verified=True (Google-verified). Auth_provider stored as 'google'. Existing email/password users linking with Google receives google_id + email_verified=True — sensible auto-merge but not documented; ensure product intent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_ext.py (created)"
+  ],
+  "success_rate": {"backend": "100% (43/43: 26 auth_ext + 17 billing regression)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "Fresh isolated users created per fixture with prefix testing_agent_<uuid>@test.com / testpass456. JWT_SECRET read from /app/backend/.env via python-dotenv to craft verify_email and reset_password purpose tokens.",
+  "seed_data_creation": "Multiple isolated ephemeral users (testing_agent_signup_*, testing_agent_resend_*, testing_agent_sendv_*, testing_agent_sendv2_*, testing_agent_reset_*, testing_agent_verify_*, testing_agent_<uid>@test.com) — not cleaned up but harmless; consider a fixture teardown in future iterations.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Mock email logging works via /var/log/supervisor/backend.err.log with substring '[MOCK EMAIL - no RESEND_API_KEY]'. To assert log entries, use tail -n 800 and filter by log timestamp AFTER the marker time to avoid stale hits (implemented via grep_log_since helper). JWT purpose-token crafting works because JWT_SECRET is read from backend/.env; keep this if secret rotates. Google OAuth cannot be fully tested from backend — Emergent's session-data endpoint requires a real X-Session-ID minted by user's browser redirect. Backend correctly rejects fake IDs with 401 (verified). If frontend needs testing later, /verify-email and /reset-password routes take a ?token= query param and POST to /api/auth/verify-email or /api/auth/reset-password respectively.",
+  "rca of the issue": "N/A — no failures. All new auth_ext endpoints behave per spec: proper 400/401 error codes, no email enumeration, mock email logging works, purpose-tokens correctly gated, password change/reset both invalidate old password, Google OAuth wiring live to Emergent."
+}
