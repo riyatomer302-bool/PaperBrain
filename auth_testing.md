@@ -12,7 +12,7 @@ All authenticated endpoints accept `Authorization: Bearer <jwt>` header.
 - **Password**: testpass123
 
 ## Google OAuth test flow (frontend)
-1. Click "Continue with Google" on `/auth` → redirects to `https://auth.emergentagent.com/?redirect=<origin>/auth/callback`
+1. Click "Continue with Google" on `/auth` → redirects to `https://auth.agent.com/?redirect=<origin>/auth/callback`
 2. Complete Google auth → browser returns to `/auth/callback#session_id=<xxx>`
 3. Frontend `AuthCallback` component extracts session_id, POSTs to `/api/auth/google/session`
 4. Backend calls Emergent `/session-data`, creates/links user by email, returns our JWT
